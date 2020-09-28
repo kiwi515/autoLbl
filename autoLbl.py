@@ -3,6 +3,7 @@ import sys
 import SMAP
 import cwfilt # Jackoalan's MWCC Demangler (https://gist.github.com/jackoalan/a4035651f6b870136da5)
 import cwfilt_1 # bwrsandman's fork of cwfilt
+import postprocess # OGWS edit of Riidefi's postprocess script https://github.com/doldecomp/ogws/blob/master/tools/postprocess.py
 
 #################################################
 #                   USAGE                       #
@@ -23,6 +24,7 @@ def asm_isLbl(s):
 def isFunc(s):
     return not s.startswith(".") and not s.startswith("@")
 
+# Yes, I know this is quite lazy :P
 def isLikelyMangled(s):
     return s.find("__") != -1
 
@@ -75,7 +77,7 @@ for i in mwMap_lines:
             try:
                 dmsymb = cwfilt_1.demangle(symb)
             except Exception:
-                print("[cwfilt] Failed to demangle " + symb)
+                print("[CWFILT] Failed to demangle " + symb)
 
     MWEntries.append(SMAP.Entry("UNUSED", symb, dmsymb, src, isDemangled))
 
@@ -124,7 +126,6 @@ for i in GEntries:
                     if i.srcfile() == namespace:
                         # if Ghidra map entry's function name == value in var funcName
                         if i.symbol() == funcName:
-                            identifyCt = identifyCt + 1
                             matches.append(k.symbol())
                 #else:
                 #    # Mangled symbol match. Unlikely to be correct, but the user is informed of it anyways.
@@ -133,20 +134,25 @@ for i in GEntries:
 
     # Print match if there is only one
     if len(matches) == 1:
-        print(i.srcfile() + "::" + i.symbol() + " -> " + matches[0])
+        print("[MATCH] " + i.srcfile() + "::" + i.symbol() + " -> " + matches[0])
+        # print("Pre-process test: " + postprocess.format(matches[0]) + '\n')
         match = k.symbol()
+        identifyCt = identifyCt + 1
     # Print all matches if there are multiple
     if len(matches) != 0 and len(matches) > 1:
-        print(len(matches) + " matches found: ")
+        print("\n[MATCH] " + str(len(matches)) + " matches found for " + i.srcfile() + "::" + i.symbol() + ": ")
         for l in range(0, len(matches)):
-            print((l+1) + ". " + matches[l])
+            print(str((l+1)) + ". " + matches[l])
+        print(' ')
         
         # User chooses match
         num = -1
-        while num > 0 and num < len(matches):
-            print("Enter the number of the match you want to use: ")
-            num = input()
-        match = matches[num]
-        print("Chosen match: " + match)*
+        while True:
+            print("[INPUT] Enter the number of the match you want to use: ")
+            num = int(input())
+            if num > 0 and num <= len(matches): break
+        match = matches[num-1]
+        identifyCt = identifyCt + 1
+        print("[INPUT] Chosen match: " + match + '\n')
 
-print("\nIdentified " + str(identifyCt) + "/" + str(inASMcount) + " functions inside " + sys.argv[1])
+print("\n[STATS] Identified " + str(identifyCt) + "/" + str(inASMcount) + " functions inside " + sys.argv[1])
