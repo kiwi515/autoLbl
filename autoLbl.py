@@ -3,7 +3,21 @@ import sys
 import SMAP
 import cwfilt # Jackoalan's MWCC Demangler (https://gist.github.com/jackoalan/a4035651f6b870136da5)
 import cwfilt_1 # bwrsandman's fork of cwfilt
-import postprocess # OGWS edit of Riidefi's postprocess script https://github.com/doldecomp/ogws/blob/master/tools/postprocess.py
+from postprocess import format, decodeformat # OGWS edit of Riidefi's postprocess script https://github.com/doldecomp/ogws/blob/master/tools/postprocess.py
+
+# colorama is used so ANSI control codes work with Windows
+color = True
+try:
+    from colorama import init, deinit, Fore, Style
+except ModuleNotFoundError:
+    print("Module colorama not found. Attempting to install through pip.....")
+    os.system('{} -m pip install -U '.format(sys.executable) + "colorama -q")
+    try:
+        from colorama import init, deinit, Fore, Style
+    except ModuleNotFoundError:
+        print("Module not imported successfully. This is not a problem, however, text coloring will not be used.")
+        color = False
+if color: init()
 
 #################################################
 #                   USAGE                       #
@@ -77,8 +91,8 @@ for i in mwMap_lines:
             try:
                 dmsymb = cwfilt_1.demangle(symb)
             except Exception:
-                print("[CWFILT] Failed to demangle " + symb)
-
+                if color: print(Fore.RED + "[CWFILT] Failed to demangle " + symb + Fore.RESET)
+                else: print("[CWFILT] Failed to demangle " + symb)
     MWEntries.append(SMAP.Entry("UNUSED", symb, dmsymb, src, isDemangled))
 
 # Search for functions in ASM
@@ -134,25 +148,44 @@ for i in GEntries:
 
     # Print match if there is only one
     if len(matches) == 1:
-        print("[MATCH] " + i.srcfile() + "::" + i.symbol() + " -> " + matches[0])
+        if color: print(Fore.GREEN + "[MATCH] " + i.srcfile() + "::" + i.symbol() + " -> " + matches[0] + Fore.RESET)
+        else: print("[MATCH] " + i.srcfile() + "::" + i.symbol() + " -> " + matches[0])
         # print("Pre-process test: " + postprocess.format(matches[0]) + '\n')
         match = k.symbol()
         identifyCt = identifyCt + 1
     # Print all matches if there are multiple
     if len(matches) != 0 and len(matches) > 1:
-        print("\n[MATCH] " + str(len(matches)) + " matches found for " + i.srcfile() + "::" + i.symbol() + ": ")
+        print(Fore.YELLOW + "[MATCH] " + str(len(matches)) + " matches found for " + i.srcfile() + "::" + i.symbol() + ": ")
         for l in range(0, len(matches)):
-            print(str((l+1)) + ". " + matches[l])
-        print(' ')
+            print('\t' + str((l+1)) + ". " + matches[l], end = '')
+            try:
+                print(" (" + cwfilt.demangle(matches[l]) + ")")
+            except Exception:
+                try:
+                    print(" (" + cwfilt_1.demangle(matches[l]) + ")")
+                except Exception:
+                    print(Fore.RED + "(demangle failed)")
+
+        if color: print(Fore.RESET)
+        else: print(' ')
         
         # User chooses match
         num = -1
         while True:
-            print("[INPUT] Enter the number of the match you want to use: ")
-            num = int(input())
+            if color: print(Fore.YELLOW + "[INPUT] Enter the number of the match you want to use: " + Fore.RESET, end = '')
+            else: print("[INPUT] Enter the number of the match you want to use: ", end = '')
+            try:
+                num = int(input())
+            except Exception:
+                if color: print(Fore.RED + "[INPUT] Invalid input entered. Try again (1-" + str(len(matches)) + "): " + Fore.RESET)
+                else: print("[INPUT] Invalid input entered. Try again (1-" + str(len(matches)) + "): ")
             if num > 0 and num <= len(matches): break
         match = matches[num-1]
         identifyCt = identifyCt + 1
-        print("[INPUT] Chosen match: " + match + '\n')
+        if color: print(Fore.YELLOW + "[INPUT] Chosen match: " + match + Fore.RESET)
+        else: print("[INPUT] Chosen match: " + match)
 
-print("\n[STATS] Identified " + str(identifyCt) + "/" + str(inASMcount) + " functions inside " + sys.argv[1])
+if color: 
+    print(Fore.CYAN + "\n[STATS] Identified " + str(identifyCt) + "/" + str(inASMcount) + " functions inside " + sys.argv[1])
+    deinit()
+else: print("\n[STATS] Identified " + str(identifyCt) + "/" + str(inASMcount) + " functions inside " + sys.argv[1])
