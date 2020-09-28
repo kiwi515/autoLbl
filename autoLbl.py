@@ -54,10 +54,6 @@ for i in mwMap_lines:
     dmsymb = " "
 
     #  003cd94c 000088 803dbd8c 003d7f6c  4 mySymb  myLib.a myObj.o
-    # addr =          {       }
-    addr = i[18:26]
-
-    #  003cd94c 000088 803dbd8c 003d7f6c  4 mySymb  myLib.a myObj.o
     # symbEnd =                                   ^
     symbEnd = i[39:].find(' ')
 
@@ -70,10 +66,8 @@ for i in mwMap_lines:
     srcStart = i.rfind(' ') # Source file string beginning, found by getting the last space char in the line
     src = chomp(i[srcStart:])
 
-    if addr == "........": addr = "UNUSED"
-
-    # If the symbol seems to be mangled, try and demangle it
     if isFunc(symb) and isLikelyMangled(symb) == True:
+        # Use the fork of cwfilt to demangle all symbols the original script fails to demangle
         try:
             dmsymb = cwfilt.demangle(symb)
             isDemangled = True
@@ -83,17 +77,23 @@ for i in mwMap_lines:
             except Exception:
                 print("[cwfilt] Failed to demangle " + symb)
 
-    MWEntries.append(SMAP.Entry(addr, symb, dmsymb, src, isDemangled))
+    MWEntries.append(SMAP.Entry("UNUSED", symb, dmsymb, src, isDemangled))
 
 # Search for functions in ASM
+inASMcount = 0
+identifyCt = 0
+matches = []
 for i in GEntries:
-    for j in asm_lines:
-        if j.find(i.address().upper()) == 3:
+    match = " "
+    matches.clear()
+    for j in range(0, len(asm_lines)):
+        if asm_lines[j].find(i.address().upper()) == 3:
+            inASMcount = inASMcount + 1
             for k in MWEntries:
-                # Demangled symbol match. This almost always accurate, and takes a higher priority over a mangled symbol match.
+                # Demangled symbol match
                 if k.isDemangled():
 
-                    if k.symbol().startswith("__sinit"):
+                    if k.symbol().startswith("__sinit_\\"):
                         funcName = k.symbol()
                         namespace = "Global"
                     else:
@@ -124,8 +124,29 @@ for i in GEntries:
                     if i.srcfile() == namespace:
                         # if Ghidra map entry's function name == value in var funcName
                         if i.symbol() == funcName:
-                            print("Match found: " + k.symbol() + ' -> ' + namespace + "::" + i.symbol() + " (" + i.address() + ")")
-                else:
-                    # Mangled symbol match. Unlikely to be correct, but the user is informed of it anyways.
-                    if k.symbol()[0:k.symbol().find("__")] == i.symbol() and k.srcfile().find(i.srcfile()) != -1:
-                        print("*POSSIBLE* match found: " + k.symbol() + ' -> ' + i.symbol() + " (" + i.address() + ")")
+                            identifyCt = identifyCt + 1
+                            matches.append(k.symbol())
+                #else:
+                #    # Mangled symbol match. Unlikely to be correct, but the user is informed of it anyways.
+                #    if k.symbol()[0:k.symbol().find("__")] == i.symbol() and k.srcfile().find(i.srcfile()) != -1:
+                #        print("*POSSIBLE* match found: " + k.symbol() + ' -> ' + i.symbol() + " (" + i.address() + ")")
+
+    # Print match if there is only one
+    if len(matches) == 1:
+        print(i.srcfile() + "::" + i.symbol() + " -> " + matches[0])
+        match = k.symbol()
+    # Print all matches if there are multiple
+    if len(matches) != 0 and len(matches) > 1:
+        print(len(matches) + " matches found: ")
+        for l in range(0, len(matches)):
+            print((l+1) + ". " + matches[l])
+        
+        # User chooses match
+        num = -1
+        while num > 0 and num < len(matches):
+            print("Enter the number of the match you want to use: ")
+            num = input()
+        match = matches[num]
+        print("Chosen match: " + match)*
+
+print("\nIdentified " + str(identifyCt) + "/" + str(inASMcount) + " functions inside " + sys.argv[1])
