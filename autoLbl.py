@@ -1,7 +1,7 @@
 ########################################################
 #               ***** SCRIPT USAGE *****               #
 #                                                      #
-#      autoLbl.py *.S ghidraMAP linkerMAP asm_dir      #
+#               autoLbl.py *.S [asm_dir]               #
 #                                                      #
 ########################################################
 
@@ -57,7 +57,7 @@ def isFunc(s):
 # is likely mangled.                   #
 ########################################
 def isLikelyMangled(s):
-    return s.find("__") != -1
+    return s.find("__") != -1 and s.rfind("F") > 0
 
 ################################################################
 # parseGhidraMap(string fPath)                                 #
@@ -127,19 +127,6 @@ def readAsmFile(s):
     asm.close()
     return asm_lines
 
-####################################################
-# countFuncsInAsm(GhidraEntry[] ghi, String[] asm) #
-# Count how many functions exist in the ASM file   #
-# that also exist in the Ghidra map.               #
-####################################################
-#def countFuncsInAsm(ghi, asm):
-#    c = 0
-#    for i in ghi:
-#        for j in asm:
-#            if j.find(i.addr.upper()) == 3:
-#                c +=1
-#    return c
-
 #############################################################################
 # replaceStrsInFile(String fPath, String[] s1, String[] s2)                 #
 # Replace all occurrences of s1[i] with s2[i] in the file located at fPath. #
@@ -191,9 +178,15 @@ def file_IsAsm(s):
 
 # Setup file contents
 asm_lines = readAsmFile(sys.argv[1])
+
+try:
+    asm_dir = sys.argv[2]
+except IndexError:
+    asm_dir = "NULL"
+    
 asm_output = asm_lines
-GEntries = parseGhidraMap(sys.argv[2])
-MWEntries = parseMwMap(sys.argv[3])
+GEntries = parseGhidraMap("RSPE_r1.map")
+MWEntries = parseMwMap("bba.map")
 
 # Search for functions in ASM
 inAsmCount = 0
@@ -214,7 +207,6 @@ for i in GEntries:
             for k in MWEntries:
                 # Demangled symbol match
                 if k.isDemangled():
-
                     if k.symbol().startswith("__sinit_\\"):
                         funcName = k.symbol()
                         namespace = "Global"
@@ -243,12 +235,19 @@ for i in GEntries:
                         if funcName == "__ct": funcName = namespace       # funcName = "MyClass" if funcName == "__ct"
 
                     # if Ghidra map entry's class/namespace == value in var namespace
-                    if i.namespace == namespace:
+                    # unnamed/anonymous namespaces are ignored
+                    if i.namespace == namespace or namespace.find("@unnamed@") != -1:
                         # if Ghidra map entry's function name == value in var funcName
                         if i.symb == funcName:
                             matches.append(k.symbol())
                             match_lines.append(j)
                             addr_list.append(i.addr.upper())
+                else:
+                    if i.symb == k.symbol():
+                        matches.append(k.symbol())
+                        match_lines.append(j)
+                        addr_list.append(i.addr.upper())
+
 
     # Print match if there is only one
     if len(matches) == 1:
@@ -306,6 +305,7 @@ for i in GEntries:
             if asm_output[match_line - 1] != '\n': asm_output.insert(match_line, '\n')
         # A label exists but it is not the correct symbol (fun_*, lbl_*, etc.)
         elif asm_output[match_line - 1].find(':') != -1 and asm_output[match_line - 1].find(match) == -1:
+            # The label is global
             if asm_output[match_line - 2].startswith(".global") and asm_output[match_line - 2].find(match) == -1:
                 asm_output[match_line - 1] = (format(match) + ":\n")
                 asm_output[match_line - 2] = (".global " + format(match) + '\n')
@@ -313,7 +313,17 @@ for i in GEntries:
                 if format(match) != match: asm_output.insert(match_line - 2, ("# " + match + '\n'))
                 # Newline if necessary
                 if asm_output[match_line - 3] != '\n': asm_output.insert(match_line - 2, '\n')
-
+            
+            # The label is treated as local under its parent func
+            else:
+                # Fix label
+                asm_output[match_line - 1] = (format(match) + ":\n")
+                # Declare global
+                asm_output.insert(match_line - 1, (".global " + format(match) + "\n"))
+                # If the symbol has invalid chars that get formatted out, comment in the unformatted version for readability
+                if format(match) != match: asm_output.insert(match_line - 1, ("# " + match + '\n'))
+                # Newline if necessary
+                if asm_output[match_line - 2] != '\n': asm_output.insert(match_line - 1, '\n')
 
 
 if color: 
@@ -329,7 +339,8 @@ for i in asm_output:
 f.close()
 
 # Update xrefs throughout project to reflect the new symbols
-print("[OUTPUT] Overwriting xrefs in " + sys.argv[4] + " of old symbols with new symbols....")
-replaceLblsInDir_recursive(sys.argv[4], final_addr_list, final_list)
-print("[SUCCESS] Done!")
+if asm_dir != "NULL":
+    print("[OUTPUT] Overwriting xrefs in " + asm_dir + " of old symbols with new symbols....")
+    replaceLblsInDir_recursive(asm_dir, final_addr_list, final_list)
+    print("[SUCCESS] Done!")
 

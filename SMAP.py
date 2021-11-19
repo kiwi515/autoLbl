@@ -1,4 +1,12 @@
-class Entry:
+class GhidraEntry:
+    def __init__(self, addr, symb, namespace):
+        self.addr = addr
+        self.symb = symb
+        self.namespace = namespace
+
+
+
+class MwEntry:
     def __init__(self, addr, symb, dm, src, isDm):
         self.addr = addr
         self.symb = symb
